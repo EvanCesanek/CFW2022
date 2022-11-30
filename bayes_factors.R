@@ -1,3 +1,82 @@
+
+# Power analysis to determine sample size
+rm(list=ls())
+# Previous data from Linear+ and Linear++
+lp = c(-0.4914,0.5220,2.2695,-0.0990,-0.9135,1.3155,-2.2125,-0.6840,-0.2790,-0.0769,-0.0645,-0.2925,0.9900,1.1212,1.0800,0.3540,1.9231,-0.3105,-0.1710,-0.7245,-0.7365,2.2995,1.4160,0.7785,-0.0495,0.7952,2.2440,-0.6420,-0.3000,0.3360,-0.2385,1.5090,0.3660,0.6750,-0.0555,-0.3885)
+lpp = c(1.7835,3.6120,1.0035,0.4365,0.0435,-0.1725,2.1435,3.2325,3.3372,4.1431,-0.9717,0.1080,3.3780,3.4890,-0.2856,4.0185,0.0120,5.0681,-0.0258,2.6178,-0.2347,1.9037,2.4900,3.2655,0.7993,3.6225,0.9346,1.4770,3.9244,1.7406,3.4755,3.9482,4.3275,4.6170,2.4615,0.8370,-0.1680)
+meanlp = mean(lp)
+sdlp = sd(lp)
+meanlpp = mean(lpp)
+sdlpp = sd(lpp)
+lpp_actual_diff = 9*.981-5*.981
+lp_actual_diff = 7*.981-5*.981
+lp_sce = 100*(1-meanlp/lp_actual_diff)
+lpp_sce = 100*(1-meanlpp/lpp_actual_diff)
+
+library(bayesplay)
+library(extraDistr)
+# Find appropriate sigmas for the alternative hypotheses
+sigmas = seq(1,50,by=0.01)
+unlikelies = qhnorm(.99,sigma=sigmas)
+# 99% of probability mass between Linear++ mean and 100%
+gtSig = sigmas[which.min(abs(unlikelies-(100-lpp_sce)))]
+# 99% of probability mass between Linear+ mean and 0%
+ltSig = sigmas[which.min(abs(unlikelies-lp_sce))]
+
+n = 21
+nSim = 10000
+threshold = 3
+bf = numeric(nSim)
+library(progress)
+pb = progress_bar$new(total=nSim)
+for (i in 1:nSim){
+  pb$tick()
+  # Generate random data according to sampled scenario
+  
+  # STRENGTHEN
+  x = rnorm(n, mean = meanlpp, sd = sdlpp)
+  y = rnorm(n, mean = meanlpp, sd = sdlpp) # H0: no difference
+  y = rnorm(n, mean = meanlp, sd = sdlp) # H1: strengthened
+  h1_sig = gtSig
+  h1_range = c(0,Inf)
+  
+  # # WEAKEN
+  # x = rnorm(n, mean = meanlp, sd = sdlp)
+  # y = rnorm(n, mean = meanlp, sd = sdlp) # H0: no difference
+  # y = rnorm(n, mean = meanlpp, sd = sdlp) # H1: weakened
+  # h1_sig = ltSig
+  # h1_range = c(-Inf,0)
+  
+  # Stats
+  diff = mean(x)-mean(y)
+  varx = var(x)
+  vary = var(y)
+  # SE of difference (unequal means)
+  se_diff_unequal = sqrt(varx / (n - 1) + vary / (n - 1))
+  # Satterthwaite DOF estimation
+  sem1 = varx / (n - 1)
+  sem2 = vary / (n - 1)
+  semsum = sem1 + sem2
+  z1 = (sem1 / semsum)^2 / (n - 1)
+  z2 = (sem2 / semsum)^2 / (n - 1)
+  df = 1.0 / (z1 + z2)
+  data_mod = likelihood(family = "student_t", mean = diff, sd = se_diff_unequal, df =df)
+  h0_mod = prior(family = "point", point = 0)
+  h1_mod = prior(family = "normal", mean = 0, sd = h1_sig, range = h1_range)
+  m1 = integral(data_mod * h1_mod)
+  m0 = integral(data_mod * h0_mod)
+  bf[i] = m1 / m0
+}
+supportH0 <- sum(bf<(1/threshold))/nSim
+supportH1 <- sum(bf>threshold)/nSim
+cat("The probability of observing support for the null hypothesis is ",supportH0)
+cat("The probability of observing support for the alternative hypothesis is ",supportH1)
+
+
+
+
+# CFW22 analysis
+
 rm(list=ls())
 
 library(bayesplay)
